@@ -1,0 +1,33 @@
+#!/bin/zsh
+#usage: fscompress videofile target_megabytes {ffmpeg_preset:slow}
+
+if (( $# < 2 )); then
+    echo "Expected at least 2 parameters."
+    exit 1
+fi
+
+workingd=$(pwd)
+tempd=$(basename $1:r)-temp
+
+mkdir $tempd
+cp $1 $tempd
+cd $tempd
+
+origin_video=$(basename $1)
+compression_factor=$2
+compressed_video="${origin_video:r}-${compression_factor}mb.mp4"
+target_bits=$((compression_factor * 8 * 1000 ** 2))
+ffmpeg_preset=${3:-slow}
+
+origin_bytes=$(stat -c "%s" $origin_video)
+scale=${$(( (8 * origin_bytes / target_bits) ** 0.5 + 0.5 ))%.*}
+
+length=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $origin_video)
+bitrate=$((target_bits / length))
+
+ffmpeg -i $origin_video -c:v libx264 -preset $ffmpeg_preset -pix_fmt yuv420p -vf "scale=iw/$scale:ih/$scale" -pass 1 -b:v $bitrate -an -f null /dev/null
+ffmpeg -i $origin_video -c:v libx264 -preset $ffmpeg_preset -pix_fmt yuv420p -c:a copy -vf "scale=iw/$scale:ih/$scale" -pass 2 -b:v $bitrate $compressed_video
+mv $compressed_video $workingd
+
+cd $workingd
+rm -r $tempd
